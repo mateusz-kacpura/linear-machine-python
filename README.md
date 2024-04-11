@@ -20,14 +20,14 @@ The program is an interactive tool for creating, training, and testing neural ne
 
 The program provides an interactive environment for experimenting with neural networks and training them to recognize digits based on image data.
 
-### Installation
+# Installation
 
 To install the program and its dependencies, follow these steps:
 
-# Clone the Repository
+### Clone the Repository
 git clone <repository_url>
 
-# Install Dependencies
+### Install Dependencies
 pip install PyQt5 numpy scikit-image
 
 ## Opis programu
