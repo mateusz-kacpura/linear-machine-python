@@ -1,13 +1,13 @@
+import numpy as np
+import skimage.io
+import skimage.transform
+import os
+import random
 from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QPushButton, QGridLayout, QVBoxLayout, QMessageBox, QLabel
 from PyQt5.QtCore import Qt
 import sys
-import numpy as np
-import skimage.io
-import os
-from skimage.color import rgb2gray
-import random
 
-TRAINING_DATA_PNG = r"C:\Users\Matteo\Documents\kalendarz\images"
+TRAINING_DATA_PNG = r"C:\Users\engli\Sieci neuronowe\linear-machine-python\images"
 
 '''
     images/
@@ -46,8 +46,8 @@ STRIDE = 1
 PADDING = 1
 
 class CNN:
-        print ("Algorytm CNN nie został jeszcze zaimpolementowany")
-        pass
+    print ("Algorytm CNN nie został jeszcze zaimpolementowany")
+    pass
 
 class LinearPerceptron():
     def __init__(self, no_of_inputs):
@@ -139,8 +139,17 @@ class Grid(QWidget):
             for col in range(self.width):
                 image = self.get_image_from_grid()
                 noisy_image = self.add_noise_function(image, NOISE_LEVEL_MAX)
-                self.noisy_grid[row][col] = noisy_image[row][col]
-                self.update_cell_from_image(self.noisy_grid, row, col)
+                if self.grid[row][col] == 0:
+                    self.noisy_grid[row][col] = noisy_image[row][col]
+                    self.update_cell_from_image(self.noisy_grid, row, col)
+
+    def get_noise_from_grid(self):
+        image = np.zeros((self.height, self.width))
+        for row in range(self.height):
+            for col in range(self.width):
+                if self.noisy_grid[row][col]:
+                    image[row][col] = 1
+        return image
 
     def get_image_from_grid(self):
         image = np.zeros((self.height, self.width))
@@ -449,9 +458,11 @@ class Interface(QMainWindow):
         filename = str(self.generate_uuid4()) + ".png"
         filepath = os.path.join(directory, filename)
 
-        image_data = np.array(self.grid.noisy_grid, dtype=np.uint8) * 255
+        image_data = self.grid.get_image_from_grid() ## funkcja zwraca prawidlowo wartości w formacie macieży z wartościami 0 i 1
+        noisy_image_data = self.grid.get_noise_from_grid() ## funkcja jest do zaimplementowania powinna zwracać tablice w formacie grid z wartościami 0 i 1
+        merged_image = image_data + noisy_image_data
+        image_data = np.array(merged_image, dtype=np.uint8) * 255
         skimage.io.imsave(filepath, image_data)
-
         QMessageBox.information(self, "Save", f"Grid state saved to folder {folder_index} as {filename} successfully!")
     
     def show_help(self):
@@ -505,3 +516,9 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = Interface()
     sys.exit(app.exec_())
+
+
+# Na przyszły tydzień
+# Biostatystyka kolos
+# Oddać program na sieci neuronowe
+# Angielski  
