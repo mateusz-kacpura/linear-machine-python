@@ -3,7 +3,8 @@ import skimage.io
 import skimage.transform
 import os
 import random
-from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QPushButton, QGridLayout, QVBoxLayout, QMessageBox, QLabel
+from skimage.color import rgb2gray
+from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QPushButton, QGridLayout, QVBoxLayout, QMessageBox, QLabel, QHBoxLayout
 from PyQt5.QtCore import Qt
 import sys
 
@@ -38,7 +39,15 @@ NOISE_LEVEL_MAX = 0.1
 NUM_CATEGORIES = 10
 ITERATIONS = 30
 LEARNING_RATE = 0.1
+
+## Training
 TRAIN_NOISE = False
+SHIFT = True
+NUMBERS_SHIFTS = 2
+
+## Photos are generated based on random offset values
+PHOTO_MULTIPLER = True
+NUMBERS_PHOTO_MULTIPLER = 3
 
 ## CNN
 FILTER_SIZE = 3
@@ -163,6 +172,13 @@ class Grid(QWidget):
         color = "black" if image[row][col] else "white"
         self.buttons[row][col].setStyleSheet(f"background-color: {color};")
 
+    def update(self, new_image):    
+        self.clear()
+        self.grid = new_image
+        for row in range(GRID_HEIGHT):
+            for col in range(GRID_WIDTH):
+                self.update_cell_from_image(new_image, row, col)
+
     def clear(self):
         for row in range(self.height):
             for col in range(self.width):
@@ -211,16 +227,30 @@ class Interface(QMainWindow):
         self.test_button = QPushButton("Test")
         self.clear_button = QPushButton("Clear (Ctr + x)")
         self.help_button = QPushButton("Help (Ctr + h)")
+        self.move_left_button = QPushButton("← Move Left")
+        self.move_right_button = QPushButton("→ Move Right")
+        self.move_up_button = QPushButton("↑ Move Up")
+        self.move_down_button = QPushButton("↓ Move Down")
         
+        arrow_button_layout = QHBoxLayout()
+        arrow_button_layout.addWidget(self.move_left_button)
+        arrow_button_layout.addWidget(self.move_up_button)
+        arrow_button_layout.addWidget(self.move_right_button)
+        arrow_button_layout.addWidget(self.move_down_button)
+
+        other_button_layout = QVBoxLayout()
+        other_button_layout.addWidget(self.save_button)
+        other_button_layout.addWidget(self.select_button)
+        other_button_layout.addWidget(self.deselect_button)
+        other_button_layout.addWidget(self.train_linear_button)
+        other_button_layout.addWidget(self.train_cnn)
+        other_button_layout.addWidget(self.test_button)
+        other_button_layout.addWidget(self.clear_button)
+        other_button_layout.addWidget(self.help_button)
+
         button_layout = QVBoxLayout()
-        button_layout.addWidget(self.save_button)
-        button_layout.addWidget(self.select_button)
-        button_layout.addWidget(self.deselect_button)
-        button_layout.addWidget(self.train_linear_button)
-        button_layout.addWidget(self.train_cnn)
-        button_layout.addWidget(self.test_button)
-        button_layout.addWidget(self.clear_button)
-        button_layout.addWidget(self.help_button)
+        button_layout.addLayout(arrow_button_layout)
+        button_layout.addLayout(other_button_layout)
 
         central_widget = QWidget()
         central_layout = QVBoxLayout()
@@ -237,13 +267,55 @@ class Interface(QMainWindow):
         self.test_button.clicked.connect(self.test)
         self.clear_button.clicked.connect(self.clear)
         self.help_button.clicked.connect(self.show_help)
+        self.move_left_button.clicked.connect(self.move_left)
+        self.move_right_button.clicked.connect(self.move_right)
+        self.move_up_button.clicked.connect(self.move_up)
+        self.move_down_button.clicked.connect(self.move_down)
+
+    def shift_image(self, image, direction):
+        image_2d = image.reshape((GRID_HEIGHT, GRID_WIDTH))  # Assuming HEIGHT and WIDTH are defined
+        if direction == 'up':
+            return np.roll(image_2d, -1, axis=0).reshape(-1)
+        elif direction == 'down':
+            return np.roll(image_2d, 1, axis=0).reshape(-1)
+        elif direction == 'left':
+            return np.roll(image_2d, -1, axis=1).reshape(-1)
+        elif direction == 'right':
+            return np.roll(image_2d, 1, axis=1).reshape(-1)
+        else:
+            raise ValueError("Invalid direction. Choose from 'up', 'down', 'left', 'right'.")
+
+    def generate_shifted_images(self, temp_image_gray):
+        directions = []
+
+        for i in range(NUMBERS_SHIFTS):
+            left = np.random.randint(0, 2)
+            up = np.random.randint(0, 2)
+            down = np.random.randint(0, 2)
+            right = np.random.randint(0, 2)
+
+            if left == 1:
+                directions.append('left')
+            if up == 1:
+                directions.append('up')
+            if down == 1:
+                directions.append('down')
+            if right == 1:
+                directions.append('right')
+
+        print (directions)
+        shifted_image = temp_image_gray  # Initialize with original image
+        for direction in directions:
+            shifted_image = self.shift_image(shifted_image, direction)
+
+        return shifted_image
 
     def preprocess_training_data(self):
 
         print("Training...")
 
         training_data = []
-        labels = []
+        number_machine = []
 
         for i in range(NUM_CATEGORIES):
             subdir = os.path.join(TRAINING_DATA_PNG, str(i))
@@ -259,22 +331,32 @@ class Interface(QMainWindow):
                         else:
                             temp_image_gray = temp_image
                         
-                        if (TRAIN_NOISE ==  True):
-                            noise_level = np.random.uniform(NOISE_LEVEL_MIN, NOISE_LEVEL_MAX)
-                            temp_image_noisy = self.add_noise(temp_image_gray, noise_level)
-                            training_data.append(temp_image_noisy.reshape(-1))
-                        else:
-                            training_data.append(temp_image_gray.reshape(-1))
-                            labels.append(i)
+                        global NUMBERS_PHOTO_MULTIPLER
+                        if (PHOTO_MULTIPLER == False):
+                            NUMBERS_PHOTO_MULTIPLER = 1
+
+                        for o in range(NUMBERS_PHOTO_MULTIPLER):
+                            if (TRAIN_NOISE ==  True):
+                                noise_level = np.random.uniform(NOISE_LEVEL_MIN, NOISE_LEVEL_MAX)
+                                temp_image_noisy = self.add_noise(temp_image_gray, noise_level)
+                                training_data.append(temp_image_noisy.reshape(-1))
+                            else:
+                                training_data.append(temp_image_gray.reshape(-1))
+                                number_machine.append(i)
+
+                            if (SHIFT == True):
+                                shifted_image = self.generate_shifted_images(temp_image_gray)
+                                training_data.append(shifted_image)
+                                number_machine.append(i)
 
             except FileNotFoundError:
                 print(f"Directory '{subdir}' not found.")
         
-        return np.array(training_data), np.array(labels)
+        return np.array(training_data), np.array(number_machine)
 
     def train_linear_machine(self):
 
-        training_data, labels = self.preprocess_training_data()
+        training_data, number_machine = self.preprocess_training_data()
 
         N = GRID_WIDTH
 
@@ -287,16 +369,16 @@ class Interface(QMainWindow):
 
         # Trening maszyny liniowej
         total_correct = 0
-        total_samples = len(labels)
+        total_samples = len(number_machine)
         for i in range(N):
             for j in range(N):
-                y = [labels[index] for index in range(len(training_data))]
+                y = [number_machine[index] for index in range(len(training_data))]
                 self.linearmachines[i][j].train(training_data, y)
 
                 correct = 0
                 for index, x in enumerate(training_data):
                     prediction = self.linearmachines[i][j].predict(x)
-                    if prediction == labels[index]:
+                    if prediction == number_machine[index]:
                         correct += 1
                 total_correct += correct
 
@@ -372,7 +454,7 @@ class Interface(QMainWindow):
     def calculate_correlation(self):
 
         data = []
-        labels = []
+        number_machine = []
 
         for i in range(NUM_CATEGORIES):
             subdir = os.path.join(TRAINING_DATA_PNG, str(i))
@@ -383,12 +465,12 @@ class Interface(QMainWindow):
                         temp_image = skimage.io.imread(filepath)
                         temp_image = skimage.transform.resize(temp_image, (IMAGE_SIZE, IMAGE_SIZE))
                         data.append(temp_image.flatten())
-                        labels.append(i)
+                        number_machine.append(i)
             except FileNotFoundError:
                 print(f"Directory '{subdir}' not found.")
 
         data = np.array(data)
-        labels = np.array(labels)
+        number_machine = np.array(number_machine)
 
         num_samples, num_features = data.shape
         correlation_matrix = np.zeros((num_features, num_features))
@@ -461,9 +543,41 @@ class Interface(QMainWindow):
         image_data = self.grid.get_image_from_grid() ## funkcja zwraca prawidlowo wartości w formacie macieży z wartościami 0 i 1
         noisy_image_data = self.grid.get_noise_from_grid() ## funkcja jest do zaimplementowania powinna zwracać tablice w formacie grid z wartościami 0 i 1
         merged_image = image_data + noisy_image_data
+        print (merged_image) ## return grid with numbers 0, 1
         image_data = np.array(merged_image, dtype=np.uint8) * 255
         skimage.io.imsave(filepath, image_data)
         QMessageBox.information(self, "Save", f"Grid state saved to folder {folder_index} as {filename} successfully!")
+
+
+## /* funkckje aktualizują stan grida przesuwając go *\ ##
+
+    def move_left(self):
+        image = self.grid.get_image_from_grid()
+        image = np.roll(image, -1, axis=1)
+        image[:, 0] = 0
+        self.grid.update(image)
+
+    def move_right(self):
+        image = self.grid.get_image_from_grid()
+        image = np.roll(image, 1, axis=1)
+        image[:, -1] = 0
+        self.grid.update(image)
+
+    def move_up(self):
+        image = self.grid.get_image_from_grid()
+        image = np.roll(image, -1, axis=0)
+        image[-1, :] = 0
+        self.grid.update(image)
+
+    def move_down(self):
+        image = self.grid.get_image_from_grid()
+        image = np.roll(image, 1, axis=0)
+        image[0, :] = 0
+        self.grid.update(image)
+
+    def update_cell_from_image(self, image, row, col):
+        color = "black" if image[row][col] else "white"
+        self.buttons[row][col].setStyleSheet(f"background-color: {color};")
     
     def show_help(self):
         msg = QMessageBox()
