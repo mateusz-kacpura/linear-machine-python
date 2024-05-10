@@ -1,4 +1,5 @@
 import numpy as np
+from numpy.random import seed
 import skimage.io
 import skimage.transform
 import os
@@ -54,9 +55,246 @@ FILTER_SIZE = 3
 STRIDE = 1
 PADDING = 1
 
+# Zmienne globalne przechowująca wytrenowany model
+ADALINE_MODEL = []
+LINEAR_MODEL = None
+
 class CNN:
     print ("Algorytm CNN nie został jeszcze zaimpolementowany")
     pass
+
+class AdalineSGD(object):
+
+	"""
+    Parametry
+    -----------
+    eta : float
+        Współczynnik uczenia (pomiędzy 0.0 a 1.0)
+    n_iter : int
+        Ilość przejść przez zbiór treningowy.
+
+    Atrybuty
+    -----------
+    w_ : 1d-array
+        Wagi po dopasowaniu.
+    errors_ : lista
+        Liczba błędnych klasyfikacji w każdej epoce.
+    shuffle : bool (domyślnie: True)
+        Miesza dane treningowe w każdej epoce, jeśli True, 
+        aby zapobiec cyklom.
+    random_state : int (domyślnie: None)
+        Ustawia stan losowy do mieszania i 
+        inicjalizowania wag.
+
+    """
+
+	def __init__(self, eta = 0.01, n_iter = 10, shuffle= True,
+				random_state = None):
+
+		self.eta = eta
+		self.n_iter = n_iter
+		self.w_initialization = False
+		self.shuffle = shuffle
+
+		if random_state:
+			seed(random_state)
+
+	def fit(self, X, y):
+
+		""" 	
+        Parametry
+        ------------
+        X : {array-like}, kształt = [n_samples, n_features]
+            Wektory treningowe, gdzie n_samples to
+            liczba próbek, a n_features to liczba
+            cech.
+        y : array-like, kształt = [n_samples]
+            Wartości docelowe.
+
+        Zwróć
+        -------
+        self : obiekt
+
+        """
+
+
+		self._initialize_weights(X.shape[1])
+		self.cost_ = []
+
+		for i in range(self.n_iter):
+
+			if self.shuffle:
+				X, y = self._shuffle(X, y)
+
+			cost = []
+			for xi, target in zip(X, y):
+				cost.append(self._update_weights(xi, target))
+
+			avg_cost = sum(cost) / len(y)
+			self.cost_.append(avg_cost)
+
+		return self
+
+	def partial_fit(self, X, y):
+
+		""" Fit training data without reinitializing the weights """
+
+		if not self.w_initialized:
+			self._initialize_weights(X.shape[1])
+
+		if y.ravel().shape[0] > 1:
+
+			for xi, target in zip(X, y):
+				self._update_weights(xi, target)
+		else:
+			self._update_weights(X, y)
+
+		return self
+
+	def _shuffle(self, X, y):
+
+		""" Shuffle training data """
+
+		r = np.random.permutation(len(y))
+
+		return X[r], y[r]
+
+	def _initialize_weights(self, m):
+
+		""" Initialize weights to zeros """
+
+		self.w_ = np.zeros(1 + m)
+		self.w_initialized = True
+
+	def _update_weights(self, xi, target):
+
+		""" Apply Adaline learning rule to update the weights """
+
+		output = self.net_input(xi)
+		error = (target - output)
+		self.w_[1:] += self.eta * xi.dot(error)
+		self.w_[0] += self.eta * error
+		cost = 0.5 * (error ** 2)
+
+		return cost
+
+	def net_input(self, X):
+
+		""" Calculate net input """
+
+		return np.dot(X, self.w_[1:]) + self.w_[0]
+
+	def activation(self, X):
+
+		""" Compute linear activation """
+
+		return self.net_input(X)
+
+	def predict(self, X):
+
+		""" Return class label after the unit step """
+
+		return np.where(self.activation(X) >= 0.0, 1, -1)
+    
+
+class Neuron:
+
+  def __init__(self, number_of_inputs, eta=0.1):
+    self.number_of_inputs = number_of_inputs
+    self.eta = eta
+    self.delta = 0
+    self.weights = (np.random.random(number_of_inputs) - 0.5) # Zadanie: dodac bias
+    self.output = 0
+    self.preactivation = 0
+    self.input = 0
+
+  def activation(self, x):
+    return 1./(1 + np.exp(-x))
+
+  def activation_derivative(self):
+    return self.output * (1 - self.output)
+
+  def predict(self, x):
+    self.input = x.copy()
+    self.preactivation = np.dot(self.weights, x)
+    self.output = self.activation(self.preactivation)
+    return self.output
+
+  def update_weights(self):
+    for i in range(self.number_of_inputs):
+      self.weights[i] -= self.eta * self.delta * self.input[i]
+
+class Layer:
+
+  def __init__(self, layer_size, prevlayer_size, eta=0.1):
+    self.layer_size = layer_size
+    self.prevlayer_size = prevlayer_size
+    self.eta = eta
+    self.neurons = []
+    for i in range(self.layer_size):
+      self.neurons.append(Neuron(self.prevlayer_size, self.eta))
+
+  def predict(self, x):
+    result = []
+    for i in range(self.layer_size):
+      result.append(self.neurons[i].predict(x))
+    return result
+
+  def update_weights(self):
+    for i in range(self.layer_size):
+      self.neurons[i].update_weights()
+
+class NeuralNetwork:
+
+  def __init__(self, structure, eta, iterations=100):
+    self.structure = structure
+    self.eta = eta
+    self.iterations = iterations
+    self.network_size = len(structure) - 1
+    self.layers = []
+    for i in range(self.network_size):
+      self.layers.append(Layer(structure[i+1], structure[i], self.eta))
+
+  def forward(self, x):
+    inputs = x.copy()
+    for i in range(self.network_size):
+      inputs = self.layers[i].predict(inputs).copy()
+    self.output = inputs.copy()
+
+  def backward(self, y):
+    #Last layer
+    last_layer = self.network_size - 1
+    for j in range(self.layers[last_layer].layer_size):
+      epsilon = self.output[j] - y[j]
+      self.layers[last_layer].neurons[j].delta = epsilon * self.layers[last_layer].neurons[j].activation_derivative()
+
+    #Previous layer
+    for l in reversed(range(last_layer)):
+      for j in range(self.layers[l].layer_size):
+        epsilon = 0
+        for k in range(self.layers[l+1].layer_size):
+          epsilon += self.layers[l+1].neurons[k].delta * self.layers[l+1].neurons[k].weights[j]
+        self.layers[l].neurons[j].delta = epsilon * self.layers[l].neurons[j].activation_derivative()
+
+    for i in range(self.network_size):
+      self.layers[i].update_weights()
+
+  def train(self, train_x, train_y):
+    self.errors = []
+    for i in range(self.iterations):
+      #index = int(np.rnadom.random()*len(train_x))
+      #x, y = train_x[index], train_y[index]
+      for (x, y) in zip(train_x, train_y):
+        self.forward(x)
+        self.backward(y)
+      self.errors.append(self.error(train_x, train_y))
+
+  def error(self, train_x, train_y):
+    e = 0
+    for (x, y) in zip(train_x, train_y):
+      o = self.forward(x)
+      e += np.linalg.norm(o - y)
+    return e / len(train_x)
 
 class LinearPerceptron():
     def __init__(self, no_of_inputs):
@@ -223,7 +461,8 @@ class Interface(QMainWindow):
         self.select_button = QPushButton("Select Mode (Ctr + a)")
         self.deselect_button = QPushButton("Deselect Mode (Ctr + q)")
         self.train_linear_button = QPushButton("Liner Machine training")
-        self.train_cnn = QPushButton("CNN training")
+        self.AdalineSGD_button = QPushButton("Adaline")
+        self.train_backpropagations = QPushButton("Backpropagation training")
         self.test_button = QPushButton("Test")
         self.clear_button = QPushButton("Clear (Ctr + x)")
         self.help_button = QPushButton("Help (Ctr + h)")
@@ -238,19 +477,32 @@ class Interface(QMainWindow):
         arrow_button_layout.addWidget(self.move_right_button)
         arrow_button_layout.addWidget(self.move_down_button)
 
-        other_button_layout = QVBoxLayout()
+        train_button_layout = QHBoxLayout()
+        train_button_layout.addWidget(self.train_linear_button)
+        train_button_layout.addWidget(self.AdalineSGD_button)
+        train_button_layout.addWidget(self.train_backpropagations)
+
+        test_button_layout = QVBoxLayout()
+        test_button_layout.addWidget(self.test_button)
+
+        manage_button_layout = QHBoxLayout()
+        manage_button_layout.addWidget(self.select_button)
+        manage_button_layout.addWidget(self.deselect_button)
+
+        other_button_layout = QHBoxLayout()
         other_button_layout.addWidget(self.save_button)
-        other_button_layout.addWidget(self.select_button)
-        other_button_layout.addWidget(self.deselect_button)
-        other_button_layout.addWidget(self.train_linear_button)
-        other_button_layout.addWidget(self.train_cnn)
-        other_button_layout.addWidget(self.test_button)
         other_button_layout.addWidget(self.clear_button)
-        other_button_layout.addWidget(self.help_button)
+
+        help_button_layout = QVBoxLayout()
+        help_button_layout.addWidget(self.help_button)
 
         button_layout = QVBoxLayout()
         button_layout.addLayout(arrow_button_layout)
+        button_layout.addLayout(train_button_layout)
+        button_layout.addLayout(test_button_layout)
+        button_layout.addLayout(manage_button_layout)
         button_layout.addLayout(other_button_layout)
+        button_layout.addLayout(help_button_layout)
 
         central_widget = QWidget()
         central_layout = QVBoxLayout()
@@ -263,7 +515,8 @@ class Interface(QMainWindow):
         self.select_button.clicked.connect(self.enable_select_mode)
         self.deselect_button.clicked.connect(self.enable_deselect_mode)
         self.train_linear_button.clicked.connect(self.train_linear_machine)
-        self.train_cnn.clicked.connect(self.train_CNN)
+        self.AdalineSGD_button.clicked.connect(self.AdalineSGD_train)
+        self.train_backpropagations.clicked.connect(self.train_backpropagation)
         self.test_button.clicked.connect(self.test)
         self.clear_button.clicked.connect(self.clear)
         self.help_button.clicked.connect(self.show_help)
@@ -310,6 +563,34 @@ class Interface(QMainWindow):
 
         return shifted_image
 
+    def train_test_split(self, x, y, test_size=0.2, random_state=None):
+        """
+        Podział danych na zbiory treningowe i testowe.
+
+        Args:
+            x (list or np.array): Tablica z danymi.
+            y (list or np.array): Tablica z etykietami.
+            test_size (float): Procent danych do użycia jako zbiór testowy (domyślnie 0.2).
+            random_state (int): Ziarno losowości (domyślnie None).
+
+        Returns:
+            tuple: Krotka zawierająca dane treningowe i testowe: (x_train, x_test, y_train, y_test).
+        """
+        if random_state is not None:
+            np.random.seed(random_state)
+
+        # Losowe indeksy danych do zbioru testowego
+        test_indices = np.random.choice(len(x), size=int(len(x) * test_size), replace=False)
+        train_indices = np.setdiff1d(np.arange(len(x)), test_indices)
+
+        x_train = [x[i] for i in train_indices]
+        y_train = [y[i] for i in train_indices]
+
+        x_test = [x[i] for i in test_indices]
+        y_test = [y[i] for i in test_indices]
+
+        return np.array(x_train), np.array(x_test), np.array(y_train), np.array(y_test)
+
     def preprocess_training_data(self):
 
         print("Training...")
@@ -352,89 +633,112 @@ class Interface(QMainWindow):
             except FileNotFoundError:
                 print(f"Directory '{subdir}' not found.")
         
-        return np.array(training_data), np.array(number_machine)
+        training_data = np.array(training_data)
+        number_machine = np.array(number_machine)
+
+        x_train, x_test, y_train, y_test = self.train_test_split(training_data, number_machine, test_size=0.2, random_state=42)
+        
+        print("training_data:", training_data.shape)
+        print("number_machine:", number_machine.shape)
+        print("x_train:", x_train.shape)
+        print("x_test:", x_test.shape)
+        print("y_train:", y_train.shape)
+        print("y_test:", y_test.shape)
+
+        return x_train, x_test, y_train, y_test
 
     def train_linear_machine(self):
+        global LINEAR_MODEL  # Dodajemy globalne odwołanie
 
-        training_data, number_machine = self.preprocess_training_data()
+        x_train, x_test, y_train, y_test = self.preprocess_training_data()
 
         N = GRID_WIDTH
 
-        # Inicjalizacji maszyn liniowych
-        self.linearmachines = []
-        for i in range(N):
-            self.linearmachines.append([])
-            for j in range(N):
-                self.linearmachines[i].append(LinearMachine(N * N, NUM_CATEGORIES))
+        # Inicjalizacja maszyny liniowej, jeśli jeszcze nie istnieje
+        if LINEAR_MODEL is None:
+            LINEAR_MODEL = LinearMachine(N * N, NUM_CATEGORIES)
 
         # Trening maszyny liniowej
-        total_correct = 0
-        total_samples = len(number_machine)
-        for i in range(N):
-            for j in range(N):
-                y = [number_machine[index] for index in range(len(training_data))]
-                self.linearmachines[i][j].train(training_data, y)
+        y = [y_train[index] for index in range(len(x_train))]
+        LINEAR_MODEL.train(x_train, y)
 
-                correct = 0
-                for index, x in enumerate(training_data):
-                    prediction = self.linearmachines[i][j].predict(x)
-                    if prediction == number_machine[index]:
-                        correct += 1
-                total_correct += correct
+        # Dokładność na danych treningowych
+        total_correct = sum(1 for x, y_true in zip(x_train, y_train) if LINEAR_MODEL.predict(x) == y_true)
+        total_samples = len(y_train)
+        overall_accuracy = total_correct / total_samples
+        print(f"Overall accuracy on training data: {overall_accuracy}")
 
-        # Dokładność
-        overall_accuracy = total_correct / (N * N * total_samples)
+    def AdalineSGD_train(self):
+        global ADALINE_MODEL
+        x_train, x_test, y_train, y_test= self.preprocess_training_data()
 
-        print(f"Overall accuracy: {overall_accuracy}")
-        print("Done!")
+        """
+        x_train przechowuje macieże np jednowymiarowe 400
+        y_train przechowuje opisy kategorii
+        """
 
-    def train_CNN(self):
-        print ("Traing CNN nie może zostać zainicjowany z powodu braku implementacji classy")
+        categories = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]
+
+        adaline_models = []
+
+        for category in categories:
+            adaline = AdalineSGD(eta=LEARNING_RATE, n_iter=ITERATIONS)
+            adaline.fit(x_train, y_train)  # Dopasowanie modelu
+            adaline_models.append(adaline)
+
+        ADALINE_MODEL = adaline_models
+
+    def train_backpropagation(self):
+        x_train, x_test, y_train, y_test= self.preprocess_training_data()
+
+        N = GRID_WIDTH
+
+        # Inicjalizacja sieci neuronowej
+        structure = [N * N, NUM_CATEGORIES]  # liczba wejść to N*N, liczba kategorii to NUM_CATEGORIES
+        eta = 0.1
+        iterations = 100
+
+        # Initialize the neural network with your desired structure and parameters
+        structure = [len(x_train[0]), 10, 1]  # Example structure with 10 neurons in the hidden layer
+        eta = 0.1  # Learning rate
+        iterations = 100  # Number of training iterations
+        print ("Parametry treingowe: ", structure, eta, iterations)
+        neural_network = NeuralNetwork(structure, eta, iterations)
+
+        # Train the neural network
+        neural_network.train(x_train, y_train)
+
+        # Evaluate the neural network on the test set
+        test_error = neural_network.error(x_test, y_test)
+        print("Test error:", test_error)
+
+    def check_category(self, flattened_image):
+        activations = []
+        for model in ADALINE_MODEL:
+            activations.append(model.activation(flattened_image))
+
+        most_activated_index = np.argmax(activations)
+        return most_activated_index
 
     def test(self):
-        if not hasattr(self, 'linearmachines') or self.linearmachines is None:
-            print ("First you need put training")
-            return
+        global ADALINE_MODEL
+        global LINEAR_MODEL
+        image_data = self.grid.get_image_from_grid() ## funkcja zwraca prawidlowo wartości w formacie macieży z wartościami 0 i 1
+        noisy_image_data = self.grid.get_noise_from_grid() ## funkcja jest do zaimplementowania powinna zwracać tablice w formacie grid z wartościami 0 i 1
+        merged_image = image_data + noisy_image_data
 
-        print("Testing...")
+        if ADALINE_MODEL is None:
+            print("Model Adaline nie jest wytrenowany. Proszę najpierw go wytrenować.")
+        else:
+            flattened_image = merged_image.flatten()
+            category = self.check_category(flattened_image)
+            print ("Algorytm adline rozpoznał liczbę", category)
 
-        recognition_table = {}
-        selected_cells = []
-
-        for i in range(len(self.grid.grid)):
-            for j in range(len(self.grid.grid[0])):
-                if self.grid.grid[i][j]:
-                    selected_cells.append((i, j))
-
-        if not selected_cells:
-            print("No cells selected.")
-            return
-
-        max_i = max(selected_cells, key=lambda x: x[0])[0] + 1
-        max_j = max(selected_cells, key=lambda x: x[1])[1] + 1
-        test_image = np.zeros((max_i, max_j))
-        for cell in selected_cells:
-            test_image[cell[0]][cell[1]] = 1
-
-        extended_test_image = np.zeros((GRID_WIDTH, GRID_HEIGHT))
-        extended_test_image[:max_i, :max_j] = test_image
-
-        noisy_test_image = self.add_noise(extended_test_image, NOISE_LEVEL_MAX) 
-        denoised_test_image = self.denoise(noisy_test_image)  
-
-        flat_image = denoised_test_image.reshape(-1)
-
-        for i, j in selected_cells:
-            prediction = self.linearmachines[i][j].predict(flat_image)
-
-            if prediction in recognition_table:
-                recognition_table[prediction] += 1
-            else:
-                recognition_table[prediction] = 1
-
-        print("\nRecognition table:")
-        for number, count in recognition_table.items():
-            print(f"Number {number} recognized {count} times.")
+        if LINEAR_MODEL is None:
+            print("Model maszyny liniowej nie jest wytrenowany. Proszę najpierw go wytrenować.")
+        else:
+            category = LINEAR_MODEL.predict(merged_image)
+            print ("Maszyna liniowa rozpoznała liczbę: ", category)
 
     def pearsonr(self, x, y):
         mean_x = np.mean(x)
