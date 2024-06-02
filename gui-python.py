@@ -42,7 +42,7 @@ NOISE_LEVEL_MAX = 0.1
 
 ## Linear perceptron  / backpropagation parametrs
 NUM_CATEGORIES = 10
-ITERATIONS = 10000
+ITERATIONS = 17368
 LEARNING_RATE = 0.1
 
 ## Training
@@ -60,7 +60,7 @@ STRIDE = 1
 PADDING = 1
 
 # Zmienne globalne przechowująca wytrenowany model
-ADALINE_MODEL = []
+ADALINE_MODEL = None
 LINEAR_MODEL = None
 BACKPROPAGATION = None
 
@@ -123,7 +123,7 @@ class AdalineSGD(object):
 
     """
 
-    def __init__(self, eta = 0.01, n_iter = 10, shuffle= True,
+    def __init__(self, eta = 0.001, n_iter = 10, shuffle= True,
                 random_state = None):
 
         self.eta = eta
@@ -204,12 +204,33 @@ class AdalineSGD(object):
     def _update_weights(self, xi, target):
 
         """ Apply Adaline learning rule to update the weights """
-
+        #print("Input data (xi):", xi)
+        #print("Target:", target)
+        
         output = self.net_input(xi)
+        #print("Output before update:", output)
+        
         error = (target - output)
+        #print("Error:", error)
+        
         self.w_[1:] += self.eta * xi.dot(error)
+        #print("Updated weights (without bias):", self.w_[1:])
+        
         self.w_[0] += self.eta * error
+        #print("Updated bias weight:", self.w_[0])
+        
         cost = 0.5 * (error ** 2)
+        #print("Cost:", cost)
+
+        # Sprawdź, czy koszt jest NaN
+        #if np.isnan(cost):
+            #print("NaN detected in cost. Details:")
+            #print("Input data (xi):", xi)
+            #print("Target:", target)
+            #print("Output before update:", output)
+            #print("Error:", error)
+            #print("Updated weights (without bias):", self.w_[1:])
+            #print("Updated bias weight:", self.w_[0])
 
         return cost
 
@@ -727,11 +748,17 @@ class Interface(QMainWindow):
 
         return x_train, x_test, y_train, y_test
 
+    def normalize_data(self, data): # nieużyta
+        min_val = np.min(data)
+        max_val = np.max(data)
+        normalized_data = -1 + 2 * (data - min_val) / (max_val - min_val)
+        return normalized_data
+
     def train_linear_machine(self):
         global LINEAR_MODEL  # Dodajemy globalne odwołanie
 
         x_train, x_test, y_train, y_test = self.preprocess_training_data()
-
+        
         N = GRID_WIDTH
 
         # Inicjalizacja maszyny liniowej, jeśli jeszcze nie istnieje
@@ -748,9 +775,9 @@ class Interface(QMainWindow):
         overall_accuracy = total_correct / total_samples
         print(f"Overall accuracy on training data: {overall_accuracy}")
 
-    def AdalineSGD_train(self):
+    def AdalineSGD_train(self):  # blednie działą
         global ADALINE_MODEL
-        x_train, x_test, y_train, y_test= self.preprocess_training_data()
+        x_train, x_test, y_train, y_test = self.preprocess_training_data()
 
         """
         x_train przechowuje macieże np jednowymiarowe 400
@@ -759,13 +786,21 @@ class Interface(QMainWindow):
 
         adaline_models = []
 
-        for i in range (0,NUM_CATEGORIES):
-            adaline = AdalineSGD(eta=LEARNING_RATE, n_iter=ITERATIONS)
-            adaline.fit(x_train, y_train)  # Dopasowanie modelu
+        for i in range(NUM_CATEGORIES):
+            y_train_category = (y_train == i).astype(int)  # Binary target for category i
+            adaline = AdalineSGD(eta=0.001, n_iter=63, shuffle=True, random_state=1)
+            adaline.fit(x_train, y_train_category)  # Dopasowanie modelu dla danej kategorii
             adaline_models.append(adaline)
+
+            # Debugowanie
+            #print(f"Model {i+1} dopasowany.")
+            #print("Wagi modelu:", adaline.w_)
+            #print("Koszty po każdej epoce:", adaline.cost_)
+
             adaline.plot_learning_curve()
-            
+
         ADALINE_MODEL = adaline_models
+        print("Wszystkie modele dopasowane i zapisane w ADALINE_MODEL.")
 
     def one_hot_encode(self, y_train, num_classes):
         one_hot_encoded = np.zeros((len(y_train), num_classes))
@@ -773,7 +808,7 @@ class Interface(QMainWindow):
         for idx, value in enumerate(y_train):
             one_hot_encoded[idx, value] = 1
         
-        return one_hot_encoded.tolist()
+        return one_hot_encoded
 
     def train_backpropagation(self):
 
@@ -808,6 +843,7 @@ class Interface(QMainWindow):
         activations = []
         for model in ADALINE_MODEL:
             activations.append(model.activation(flattened_image))
+            print(model.activation(flattened_image))
 
         most_activated_index = np.argmax(activations)
         return most_activated_index
@@ -815,6 +851,8 @@ class Interface(QMainWindow):
     def test(self):
         global ADALINE_MODEL
         global LINEAR_MODEL
+        global BACKPROPAGATION
+
         image_data = self.grid.get_image_from_grid() ## funkcja zwraca prawidlowo wartości w formacie macieży z wartościami 0 i 1
         noisy_image_data = self.grid.get_noise_from_grid() ## funkcja jest do zaimplementowania powinna zwracać tablice w formacie grid z wartościami 0 i 1
         merged_image = image_data + noisy_image_data
@@ -823,6 +861,11 @@ class Interface(QMainWindow):
         if ADALINE_MODEL is None:
             print("Model Adaline nie jest wytrenowany. Proszę najpierw go wytrenować.")
         else:
+            #for obj in ADALINE_MODEL:
+                #print(obj.eta)
+                #print(obj.n_iter)
+                #print(obj.w_)
+                #print(obj.cost_)
             category = self.check_category(flattened_image)
             print ("Algorytm adline rozpoznał liczbę", category)
 
@@ -835,10 +878,10 @@ class Interface(QMainWindow):
         if BACKPROPAGATION is None:
             print("Model propagacji wstecznej nie jest wytrenowany. Proszę najpierw go wytrenować.")
         else:
-            print(f"Flattened image shape: {flattened_image.shape}")
+            #print(f"Flattened image shape: {flattened_image.shape}")
 
             predictions = BACKPROPAGATION.forward(flattened_image)
-            print(f"Predictions: {predictions}")
+            #print(f"Predictions: {predictions}")
             if predictions.size == 0:
                 raise ValueError("Predictions array is empty")
             predict_class = np.argmax(predictions)
