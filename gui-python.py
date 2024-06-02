@@ -8,6 +8,8 @@ from skimage.color import rgb2gray
 from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QPushButton, QGridLayout, QVBoxLayout, QMessageBox, QLabel, QHBoxLayout
 from PyQt5.QtCore import Qt
 import sys
+import matplotlib.pyplot as plt
+import pickle
 
 TRAINING_DATA_PNG = r"C:\Users\engli\Sieci neuronowe\linear-machine-python\images"
 
@@ -26,6 +28,8 @@ TRAINING_DATA_PNG = r"C:\Users\engli\Sieci neuronowe\linear-machine-python\image
     └── ...
 '''
 
+DEBUGGING = 'ON' ## ON / OFF
+
 ## Grid (px)
 GRID_WIDTH = 20
 GRID_HEIGHT = 20
@@ -36,9 +40,9 @@ IMAGE_SIZE = 20
 NOISE_LEVEL_MIN = 0
 NOISE_LEVEL_MAX = 0.1
 
-## Linear perceptron
+## Linear perceptron  / backpropagation parametrs
 NUM_CATEGORIES = 10
-ITERATIONS = 30
+ITERATIONS = 10000
 LEARNING_RATE = 0.1
 
 ## Training
@@ -58,14 +62,45 @@ PADDING = 1
 # Zmienne globalne przechowująca wytrenowany model
 ADALINE_MODEL = []
 LINEAR_MODEL = None
+BACKPROPAGATION = None
+
 
 class CNN:
     print ("Algorytm CNN nie został jeszcze zaimpolementowany")
     pass
 
+class ModelHandler:
+    def __init__(self):
+        self.save_models.clicked.connect(self.event_save_models)
+        self.load_models.clicked.connect(self.event_load_models)
+
+    def event_save_models(self):
+        models = {
+            'ADALINE_MODEL': ADALINE_MODEL,
+            'LINEAR_MODEL': LINEAR_MODEL,
+            'BACKPROPAGATION': BACKPROPAGATION
+        }
+        
+        with open('models.pkl', 'wb') as file:
+            pickle.dump(models, file)
+        print("Models saved successfully.")
+
+    def event_load_models(self):
+        global ADALINE_MODEL, LINEAR_MODEL, BACKPROPAGATION
+
+        if os.path.exists('models.pkl'):
+            with open('models.pkl', 'rb') as file:
+                models = pickle.load(file)
+                ADALINE_MODEL = models.get('ADALINE_MODEL', [])
+                LINEAR_MODEL = models.get('LINEAR_MODEL', None)
+                BACKPROPAGATION = models.get('BACKPROPAGATION', None)
+            print("Models loaded successfully.")
+        else:
+            print("No saved models found.")
+
 class AdalineSGD(object):
 
-	"""
+    """
     Parametry
     -----------
     eta : float
@@ -88,20 +123,20 @@ class AdalineSGD(object):
 
     """
 
-	def __init__(self, eta = 0.01, n_iter = 10, shuffle= True,
-				random_state = None):
+    def __init__(self, eta = 0.01, n_iter = 10, shuffle= True,
+                random_state = None):
 
-		self.eta = eta
-		self.n_iter = n_iter
-		self.w_initialization = False
-		self.shuffle = shuffle
+        self.eta = eta
+        self.n_iter = n_iter
+        self.w_initialization = False
+        self.shuffle = shuffle
 
-		if random_state:
-			seed(random_state)
+        if random_state:
+            seed(random_state)
 
-	def fit(self, X, y):
+    def fit(self, X, y):
 
-		""" 	
+        """ 	
         Parametry
         ------------
         X : {array-like}, kształt = [n_samples, n_features]
@@ -118,183 +153,188 @@ class AdalineSGD(object):
         """
 
 
-		self._initialize_weights(X.shape[1])
-		self.cost_ = []
+        self._initialize_weights(X.shape[1])
+        self.cost_ = []
 
-		for i in range(self.n_iter):
+        for i in range(self.n_iter):
 
-			if self.shuffle:
-				X, y = self._shuffle(X, y)
+            if self.shuffle:
+                X, y = self._shuffle(X, y)
 
-			cost = []
-			for xi, target in zip(X, y):
-				cost.append(self._update_weights(xi, target))
+            cost = []
+            for xi, target in zip(X, y):
+                cost.append(self._update_weights(xi, target))
 
-			avg_cost = sum(cost) / len(y)
-			self.cost_.append(avg_cost)
+            avg_cost = sum(cost) / len(y)
+            self.cost_.append(avg_cost)
 
-		return self
+        return self
 
-	def partial_fit(self, X, y):
+    def partial_fit(self, X, y):
 
-		""" Fit training data without reinitializing the weights """
+        """ Fit training data without reinitializing the weights """
 
-		if not self.w_initialized:
-			self._initialize_weights(X.shape[1])
+        if not self.w_initialized:
+            self._initialize_weights(X.shape[1])
 
-		if y.ravel().shape[0] > 1:
+        if y.ravel().shape[0] > 1:
 
-			for xi, target in zip(X, y):
-				self._update_weights(xi, target)
-		else:
-			self._update_weights(X, y)
+            for xi, target in zip(X, y):
+                self._update_weights(xi, target)
+        else:
+            self._update_weights(X, y)
 
-		return self
+        return self
 
-	def _shuffle(self, X, y):
+    def _shuffle(self, X, y):
 
-		""" Shuffle training data """
+        """ Shuffle training data """
 
-		r = np.random.permutation(len(y))
+        r = np.random.permutation(len(y))
 
-		return X[r], y[r]
+        return X[r], y[r]
 
-	def _initialize_weights(self, m):
+    def _initialize_weights(self, m):
 
-		""" Initialize weights to zeros """
+        """ Initialize weights to zeros """
 
-		self.w_ = np.zeros(1 + m)
-		self.w_initialized = True
+        self.w_ = np.zeros(1 + m)
+        self.w_initialized = True
 
-	def _update_weights(self, xi, target):
+    def _update_weights(self, xi, target):
 
-		""" Apply Adaline learning rule to update the weights """
+        """ Apply Adaline learning rule to update the weights """
 
-		output = self.net_input(xi)
-		error = (target - output)
-		self.w_[1:] += self.eta * xi.dot(error)
-		self.w_[0] += self.eta * error
-		cost = 0.5 * (error ** 2)
+        output = self.net_input(xi)
+        error = (target - output)
+        self.w_[1:] += self.eta * xi.dot(error)
+        self.w_[0] += self.eta * error
+        cost = 0.5 * (error ** 2)
 
-		return cost
+        return cost
 
-	def net_input(self, X):
+    def net_input(self, X):
 
-		""" Calculate net input """
+        """ Calculate net input """
 
-		return np.dot(X, self.w_[1:]) + self.w_[0]
+        return np.dot(X, self.w_[1:]) + self.w_[0]
 
-	def activation(self, X):
+    def activation(self, X):
 
-		""" Compute linear activation """
+        """ Compute linear activation """
 
-		return self.net_input(X)
+        return self.net_input(X)
 
-	def predict(self, X):
+    def predict(self, X):
 
-		""" Return class label after the unit step """
+        """ Return class label after the unit step """
 
-		return np.where(self.activation(X) >= 0.0, 1, -1)
+        return np.where(self.activation(X) >= 0.0, 1, -1)
     
+    def plot_learning_curve(self):
+        """ Plot the learning curve of the AdalineSGD """
+        plt.plot(range(1, len(self.cost_) + 1), self.cost_, marker='o')
+        plt.xlabel('Epochs')
+        plt.ylabel('Average Cost')
+        plt.title('Adaline - Learning rate {}'.format(self.eta))
+        plt.show()
 
 class Neuron:
+    def __init__(self, number_of_inputs, eta=0.1):
+        self.number_of_inputs = number_of_inputs
+        self.eta = eta
+        self.delta = 0
+        self.weights = np.random.random(number_of_inputs) - 0.5
+        self.bias = np.random.random() - 0.5
+        self.output = 0
+        self.preactivation = 0
+        self.input = 0
 
-  def __init__(self, number_of_inputs, eta=0.1):
-    self.number_of_inputs = number_of_inputs
-    self.eta = eta
-    self.delta = 0
-    self.weights = (np.random.random(number_of_inputs) - 0.5) # Zadanie: dodac bias
-    self.output = 0
-    self.preactivation = 0
-    self.input = 0
+    def activation(self, x):
+        return 1. / (1 + np.exp(-x))
 
-  def activation(self, x):
-    return 1./(1 + np.exp(-x))
+    def activation_derivative(self):
+        return self.output * (1 - self.output)
 
-  def activation_derivative(self):
-    return self.output * (1 - self.output)
+    def predict(self, x):
+        self.input = x.copy()
+        self.preactivation = np.dot(self.weights, x) + self.bias
+        self.output = self.activation(self.preactivation)
+        return self.output
 
-  def predict(self, x):
-    self.input = x.copy()
-    self.preactivation = np.dot(self.weights, x)
-    self.output = self.activation(self.preactivation)
-    return self.output
-
-  def update_weights(self):
-    for i in range(self.number_of_inputs):
-      self.weights[i] -= self.eta * self.delta * self.input[i]
+    def update_weights(self):
+        for i in range(self.number_of_inputs):
+            self.weights[i] -= self.eta * self.delta * self.input[i]
+        self.bias -= self.eta * self.delta
 
 class Layer:
+    def __init__(self, layer_size, prevlayer_size, eta=0.1):
+        self.layer_size = layer_size
+        self.prevlayer_size = prevlayer_size
+        self.eta = eta
+        self.neurons = [Neuron(prevlayer_size, eta) for _ in range(layer_size)]
 
-  def __init__(self, layer_size, prevlayer_size, eta=0.1):
-    self.layer_size = layer_size
-    self.prevlayer_size = prevlayer_size
-    self.eta = eta
-    self.neurons = []
-    for i in range(self.layer_size):
-      self.neurons.append(Neuron(self.prevlayer_size, self.eta))
+    def predict(self, x):
+        return [neuron.predict(x) for neuron in self.neurons]
 
-  def predict(self, x):
-    result = []
-    for i in range(self.layer_size):
-      result.append(self.neurons[i].predict(x))
-    return result
-
-  def update_weights(self):
-    for i in range(self.layer_size):
-      self.neurons[i].update_weights()
+    def update_weights(self):
+        for neuron in self.neurons:
+            neuron.update_weights()
 
 class NeuralNetwork:
+    def __init__(self, structure, eta, iterations=100):
+        self.structure = structure
+        self.eta = eta
+        self.iterations = iterations
+        self.network_size = len(structure) - 1
+        self.layers = [Layer(structure[i + 1], structure[i], eta) for i in range(self.network_size)]
+        self.errors = []
 
-  def __init__(self, structure, eta, iterations=100):
-    self.structure = structure
-    self.eta = eta
-    self.iterations = iterations
-    self.network_size = len(structure) - 1
-    self.layers = []
-    for i in range(self.network_size):
-      self.layers.append(Layer(structure[i+1], structure[i], self.eta))
+    def forward(self, x):
+        inputs = x.copy()
+        for layer in self.layers:
+            inputs = layer.predict(inputs)
+        self.output = np.array(inputs)
+        return self.output
 
-  def forward(self, x):
-    inputs = x.copy()
-    for i in range(self.network_size):
-      inputs = self.layers[i].predict(inputs).copy()
-    self.output = inputs.copy()
+    def backward(self, y):
+        y = np.array(y)
+        last_layer = self.network_size - 1
 
-  def backward(self, y):
-    #Last layer
-    last_layer = self.network_size - 1
-    for j in range(self.layers[last_layer].layer_size):
-      epsilon = self.output[j] - y[j]
-      self.layers[last_layer].neurons[j].delta = epsilon * self.layers[last_layer].neurons[j].activation_derivative()
+        # Adjust for multiple outputs
+        for j in range(self.layers[last_layer].layer_size):
+            epsilon = self.output[j] - y[j]
+            self.layers[last_layer].neurons[j].delta = epsilon * self.layers[last_layer].neurons[j].activation_derivative()
 
-    #Previous layer
-    for l in reversed(range(last_layer)):
-      for j in range(self.layers[l].layer_size):
-        epsilon = 0
-        for k in range(self.layers[l+1].layer_size):
-          epsilon += self.layers[l+1].neurons[k].delta * self.layers[l+1].neurons[k].weights[j]
-        self.layers[l].neurons[j].delta = epsilon * self.layers[l].neurons[j].activation_derivative()
+        for l in reversed(range(last_layer)):
+            for j in range(self.layers[l].layer_size):
+                epsilon = sum(self.layers[l + 1].neurons[k].delta * self.layers[l + 1].neurons[k].weights[j] for k in range(self.layers[l + 1].layer_size))
+                self.layers[l].neurons[j].delta = epsilon * self.layers[l].neurons[j].activation_derivative()
 
-    for i in range(self.network_size):
-      self.layers[i].update_weights()
+        for layer in self.layers:
+            layer.update_weights()
 
-  def train(self, train_x, train_y):
-    self.errors = []
-    for i in range(self.iterations):
-      #index = int(np.rnadom.random()*len(train_x))
-      #x, y = train_x[index], train_y[index]
-      for (x, y) in zip(train_x, train_y):
-        self.forward(x)
-        self.backward(y)
-      self.errors.append(self.error(train_x, train_y))
+    def train(self, train_x, train_y):
+        self.errors = []
+        for _ in range(self.iterations):
+            for x, y in zip(train_x, train_y):
+                self.forward(x)
+                self.backward(y)  # Adjusted to accept array of outputs
+            self.errors.append(self.error(train_x, train_y))
 
-  def error(self, train_x, train_y):
-    e = 0
-    for (x, y) in zip(train_x, train_y):
-      o = self.forward(x)
-      e += np.linalg.norm(o - y)
-    return e / len(train_x)
+    def error(self, train_x, train_y):
+        e = 0
+        for x, y in zip(train_x, train_y):
+            o = self.forward(x)
+            e += np.linalg.norm(o - y)
+        return e / len(train_x)
+
+    def plot_errors(self):
+        plt.plot(self.errors)
+        plt.title("Training Error Progress")
+        plt.xlabel("Iterations")
+        plt.ylabel("Error")
+        plt.show()
 
 class LinearPerceptron():
     def __init__(self, no_of_inputs):
@@ -330,8 +370,29 @@ class LinearMachine():
                     self.perceptrons[l].weights[1:] += self.eta * (x - self.perceptrons[l].weights[1:])
                     self.perceptrons[l].weights[0] += self.eta * (1)
 
+        self.plot_training_process(i, X, y)
+
     def predict(self, x):
         return self.output(x)
+    
+    def plot_training_process(self, iteration, X, y):
+        plt.figure(figsize=(8, 6))
+        for idx, point in enumerate(X):
+            if y[idx] == 0:
+                plt.scatter(point[0], point[1], color='red', marker='o')
+            elif y[idx] == 1:
+                plt.scatter(point[0], point[1], color='blue', marker='x')
+        
+        x_values = [np.min(X[:, 0] - 1), np.max(X[:, 0] + 1)]
+        for i, perceptron in enumerate(self.perceptrons):
+            y_values = -(perceptron.weights[1] * np.array(x_values) + perceptron.weights[0]) / perceptron.weights[2]
+            plt.plot(x_values, y_values, label=f'Perceptron {i + 1}')
+        
+        plt.title(f'Iteration {iteration + 1}')
+        plt.xlabel('Feature 1')
+        plt.ylabel('Feature 2')
+        plt.legend()
+        plt.show()
 
 class Grid(QWidget):
     def __init__(self, width=GRID_WIDTH, height=GRID_HEIGHT, cell_size=CELL_SIZE, add_noise_function=None):
@@ -457,7 +518,7 @@ class Interface(QMainWindow):
         self.setCentralWidget(central_widget)
 
     def create_buttons(self):
-        self.save_button = QPushButton("Save (Ctr + s)")
+        self.save_button = QPushButton("Save picture (Ctr + s)")
         self.select_button = QPushButton("Select Mode (Ctr + a)")
         self.deselect_button = QPushButton("Deselect Mode (Ctr + q)")
         self.train_linear_button = QPushButton("Liner Machine training")
@@ -466,6 +527,8 @@ class Interface(QMainWindow):
         self.test_button = QPushButton("Test")
         self.clear_button = QPushButton("Clear (Ctr + x)")
         self.help_button = QPushButton("Help (Ctr + h)")
+        self.save_models = QPushButton("Save models")
+        self.load_models = QPushButton("Load models")
         self.move_left_button = QPushButton("← Move Left")
         self.move_right_button = QPushButton("→ Move Right")
         self.move_up_button = QPushButton("↑ Move Up")
@@ -490,6 +553,8 @@ class Interface(QMainWindow):
         manage_button_layout.addWidget(self.deselect_button)
 
         other_button_layout = QHBoxLayout()
+        other_button_layout.addWidget(self.save_models)
+        other_button_layout.addWidget(self.load_models)
         other_button_layout.addWidget(self.save_button)
         other_button_layout.addWidget(self.clear_button)
 
@@ -518,6 +583,8 @@ class Interface(QMainWindow):
         self.AdalineSGD_button.clicked.connect(self.AdalineSGD_train)
         self.train_backpropagations.clicked.connect(self.train_backpropagation)
         self.test_button.clicked.connect(self.test)
+        self.save_models.clicked.connect(ModelHandler.event_save_models)
+        self.load_models.clicked.connect(ModelHandler.event_load_models)
         self.clear_button.clicked.connect(self.clear)
         self.help_button.clicked.connect(self.show_help)
         self.move_left_button.clicked.connect(self.move_left)
@@ -592,6 +659,8 @@ class Interface(QMainWindow):
         return np.array(x_train), np.array(x_test), np.array(y_train), np.array(y_test)
 
     def preprocess_training_data(self):
+        global NUMBERS_PHOTO_MULTIPLER
+        global DEBUGGING
 
         print("Training...")
 
@@ -612,7 +681,6 @@ class Interface(QMainWindow):
                         else:
                             temp_image_gray = temp_image
                         
-                        global NUMBERS_PHOTO_MULTIPLER
                         if (PHOTO_MULTIPLER == False):
                             NUMBERS_PHOTO_MULTIPLER = 1
 
@@ -633,6 +701,12 @@ class Interface(QMainWindow):
             except FileNotFoundError:
                 print(f"Directory '{subdir}' not found.")
         
+        '''
+        if DEBUGGING == 'ON':
+            for id, data in enumerate(training_data):
+                print(f"Size of element {id}: {data.shape}")
+        '''
+
         training_data = np.array(training_data)
         number_machine = np.array(number_machine)
 
@@ -644,6 +718,12 @@ class Interface(QMainWindow):
         print("x_test:", x_test.shape)
         print("y_train:", y_train.shape)
         print("y_test:", y_test.shape)
+
+        y_train_unique = np.unique(y_train)
+        if len(y_train_unique) != NUM_CATEGORIES:
+            print("Liczba kategorii musi być równa licznie unikalnych wartości y zbioru treningowego")
+            print("y_train to", y_train)
+            print("NUM_CATEGORIES to", NUM_CATEGORIES)
 
         return x_train, x_test, y_train, y_test
 
@@ -677,40 +757,52 @@ class Interface(QMainWindow):
         y_train przechowuje opisy kategorii
         """
 
-        categories = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]
-
         adaline_models = []
 
-        for category in categories:
+        for i in range (0,NUM_CATEGORIES):
             adaline = AdalineSGD(eta=LEARNING_RATE, n_iter=ITERATIONS)
             adaline.fit(x_train, y_train)  # Dopasowanie modelu
             adaline_models.append(adaline)
-
+            adaline.plot_learning_curve()
+            
         ADALINE_MODEL = adaline_models
 
+    def one_hot_encode(self, y_train, num_classes):
+        one_hot_encoded = np.zeros((len(y_train), num_classes))
+        
+        for idx, value in enumerate(y_train):
+            one_hot_encoded[idx, value] = 1
+        
+        return one_hot_encoded.tolist()
+
     def train_backpropagation(self):
+
+        global BACKPROPAGATION
+
         x_train, x_test, y_train, y_test= self.preprocess_training_data()
-
+        
         N = GRID_WIDTH
+        
+        one_hot_encoded_y_train = self.one_hot_encode(y_train, NUM_CATEGORIES)
+        
+        '''
+        if DEBUGGING == 'ON':
+            print("Dane y_train zostały poprawnie przekonwertowane do postaci one-hot encoded vectors)
+            ### Tylko takie dane przyjmuje algorytm wstecznej propagacji błędu
+            print("Wymiar przekonweerownych danych:", one_hot_encoded_y_train.shape())
+        '''
 
-        # Inicjalizacja sieci neuronowej
-        structure = [N * N, NUM_CATEGORIES]  # liczba wejść to N*N, liczba kategorii to NUM_CATEGORIES
-        eta = 0.1
-        iterations = 100
+        adaline_models = []
+        structure = [N * N, 2, 10]
+        neural_network = NeuralNetwork(structure, eta=LEARNING_RATE, iterations=ITERATIONS)
 
-        # Initialize the neural network with your desired structure and parameters
-        structure = [len(x_train[0]), 10, 1]  # Example structure with 10 neurons in the hidden layer
-        eta = 0.1  # Learning rate
-        iterations = 100  # Number of training iterations
-        print ("Parametry treingowe: ", structure, eta, iterations)
-        neural_network = NeuralNetwork(structure, eta, iterations)
-
-        # Train the neural network
-        neural_network.train(x_train, y_train)
-
-        # Evaluate the neural network on the test set
+        neural_network.train(x_train, one_hot_encoded_y_train)
+        
         test_error = neural_network.error(x_test, y_test)
         print("Test error:", test_error)
+
+        neural_network.plot_errors()
+        BACKPROPAGATION = neural_network
 
     def check_category(self, flattened_image):
         activations = []
@@ -726,11 +818,11 @@ class Interface(QMainWindow):
         image_data = self.grid.get_image_from_grid() ## funkcja zwraca prawidlowo wartości w formacie macieży z wartościami 0 i 1
         noisy_image_data = self.grid.get_noise_from_grid() ## funkcja jest do zaimplementowania powinna zwracać tablice w formacie grid z wartościami 0 i 1
         merged_image = image_data + noisy_image_data
+        flattened_image = merged_image.flatten()
 
         if ADALINE_MODEL is None:
             print("Model Adaline nie jest wytrenowany. Proszę najpierw go wytrenować.")
         else:
-            flattened_image = merged_image.flatten()
             category = self.check_category(flattened_image)
             print ("Algorytm adline rozpoznał liczbę", category)
 
@@ -739,6 +831,18 @@ class Interface(QMainWindow):
         else:
             category = LINEAR_MODEL.predict(merged_image)
             print ("Maszyna liniowa rozpoznała liczbę: ", category)
+
+        if BACKPROPAGATION is None:
+            print("Model propagacji wstecznej nie jest wytrenowany. Proszę najpierw go wytrenować.")
+        else:
+            print(f"Flattened image shape: {flattened_image.shape}")
+
+            predictions = BACKPROPAGATION.forward(flattened_image)
+            print(f"Predictions: {predictions}")
+            if predictions.size == 0:
+                raise ValueError("Predictions array is empty")
+            predict_class = np.argmax(predictions)
+            print(f"Wsteczna propagacja rozmoznała liczbę: {predict_class}")
 
     def pearsonr(self, x, y):
         mean_x = np.mean(x)
