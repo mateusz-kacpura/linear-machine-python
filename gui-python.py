@@ -10,6 +10,7 @@ from PyQt5.QtCore import Qt
 import sys
 import matplotlib.pyplot as plt
 import pickle
+from tqdm import tqdm
 
 TRAINING_DATA_PNG = r"C:\Users\engli\Sieci neuronowe\linear-machine-python\images"
 
@@ -42,7 +43,7 @@ NOISE_LEVEL_MAX = 0.1
 
 ## Linear perceptron  / backpropagation parametrs
 NUM_CATEGORIES = 10
-ITERATIONS = 17368
+ITERATIONS = 70
 LEARNING_RATE = 0.1
 
 ## Training
@@ -52,7 +53,7 @@ NUMBERS_SHIFTS = 2
 
 ## Photos are generated based on random offset values
 PHOTO_MULTIPLER = True
-NUMBERS_PHOTO_MULTIPLER = 3
+NUMBERS_PHOTO_MULTIPLER = 10
 
 ## CNN
 FILTER_SIZE = 3
@@ -64,6 +65,60 @@ ADALINE_MODEL = None
 LINEAR_MODEL = None
 BACKPROPAGATION = None
 
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.datasets import fetch_lfw_people
+from sklearn.preprocessing import normalize
+
+class ArnoldFacesPCA:  ## redukcja wymiaru PCA
+    def __init__(self, height=50, width=37, no_of_components=5):
+        self.height = height
+        self.width = width
+        self.N = height * width
+        self.no_of_components = no_of_components
+        self.components = []
+
+    def load_data(self):
+        lfw_people = fetch_lfw_people(min_faces_per_person=20, resize=0.4)
+        arnold_faces = lfw_people.images[lfw_people.target == 6]  # Target 6 dla Arnolda Schwarzeneggera
+        self.arnold_faces = arnold_faces.reshape((-1, self.N))
+        self.normalized_arnold_faces = normalize(self.arnold_faces)
+
+    def oja_rule(self, xs):
+        w_oja = np.random.normal(scale=0.25, size=(self.N, 1))
+        prev_w_oja = np.ones((self.N, 1))
+        eta = 1e-4
+        max_iterations = 1000
+        tolerance = 1e-8
+        iterations = 0
+
+        while (np.linalg.norm(w_oja - prev_w_oja) > tolerance) and (iterations < max_iterations):
+            iterations += 1
+            prev_w_oja = w_oja.copy()
+            ys = np.dot(xs, w_oja)
+            update = eta * np.dot(xs.T, ys - ys * np.dot(xs, w_oja))
+            w_oja += update
+            w_oja /= np.linalg.norm(w_oja)  # Normalizacja wektora
+
+            if iterations % 100 == 0:
+                print(f"Iteration {iterations}: Change in weights: {np.linalg.norm(w_oja - prev_w_oja)}")
+
+        return w_oja
+
+    def run(self):
+        self.load_data()
+        xs = self.normalized_arnold_faces
+        for i in range(self.no_of_components):
+            w_oja = self.oja_rule(xs)
+            self.components.append(w_oja)
+            xs -= np.dot(np.dot(xs, w_oja), w_oja.T)
+
+    def plot_components(self):
+        fig, axes = plt.subplots(1, self.no_of_components, figsize=(15, 8))
+        for i, component in enumerate(self.components):
+            axes[i].imshow(component.reshape(self.height, self.width), cmap='gray')
+            axes[i].axis('off')
+        plt.show()
 
 class CNN:
     print ("Algorytm CNN nie został jeszcze zaimpolementowany")
@@ -337,11 +392,14 @@ class NeuralNetwork:
 
     def train(self, train_x, train_y):
         self.errors = []
+        pbar = tqdm(total=self.iterations, desc='Training')
         for _ in range(self.iterations):
             for x, y in zip(train_x, train_y):
                 self.forward(x)
                 self.backward(y)  # Adjusted to accept array of outputs
             self.errors.append(self.error(train_x, train_y))
+            pbar.update(1)
+        pbar.close()
 
     def error(self, train_x, train_y):
         e = 0
@@ -706,17 +764,17 @@ class Interface(QMainWindow):
                             NUMBERS_PHOTO_MULTIPLER = 1
 
                         for o in range(NUMBERS_PHOTO_MULTIPLER):
-                            if (TRAIN_NOISE ==  True):
+                            if (TRAIN_NOISE == True):
                                 noise_level = np.random.uniform(NOISE_LEVEL_MIN, NOISE_LEVEL_MAX)
                                 temp_image_noisy = self.add_noise(temp_image_gray, noise_level)
-                                training_data.append(temp_image_noisy.reshape(-1))
+                                training_data.append(temp_image_noisy.flatten())  # Use flatten() instead of reshape(-1)
                             else:
-                                training_data.append(temp_image_gray.reshape(-1))
+                                training_data.append(temp_image_gray.flatten())  # Use flatten() instead of reshape(-1)
                                 number_machine.append(i)
 
                             if (SHIFT == True):
                                 shifted_image = self.generate_shifted_images(temp_image_gray)
-                                training_data.append(shifted_image)
+                                training_data.append(shifted_image.flatten())  # Use flatten() instead of reshape(-1)
                                 number_machine.append(i)
 
             except FileNotFoundError:
@@ -828,7 +886,7 @@ class Interface(QMainWindow):
         '''
 
         adaline_models = []
-        structure = [N * N, 2, 10]
+        structure = [N * N, 20, 10]
         neural_network = NeuralNetwork(structure, eta=LEARNING_RATE, iterations=ITERATIONS)
 
         neural_network.train(x_train, one_hot_encoded_y_train)
@@ -1087,3 +1145,6 @@ if __name__ == "__main__":
 # Biostatystyka kolos
 # Oddać program na sieci neuronowe
 # Angielski  
+
+
+# rykaczewski sieci / konwuluncyjne 
